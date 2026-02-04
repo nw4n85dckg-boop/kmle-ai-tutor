@@ -10,17 +10,19 @@ from fpdf import FPDF
 from PIL import Image
 import base64
 import io
+import requests
+from streamlit_lottie import st_lottie
 
 # --- 1. 환경 및 기본 설정 ---
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
-# [2026.02.04 기준 최신 모델]
+# [2026.02.05 기준 최신 모델]
 TARGET_MODEL = "models/gemini-3-pro-preview"
 
 # 페이지 설정 (가장 먼저 실행되어야 함)
 st.set_page_config(
-    page_title="KMLE AI Tutor v8.1",
+    page_title="KMLE AI Tutor v8.3",
     page_icon="🌸",
     layout="wide"
 )
@@ -89,7 +91,6 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (username TEXT PRIMARY KEY, password TEXT)''')
-    # 이미지 데이터는 무거우니 DB엔 텍스트만 저장하고, 세션에서만 이미지를 보여줍니다.
     c.execute('''CREATE TABLE IF NOT EXISTS chat_history
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   username TEXT, 
@@ -121,11 +122,9 @@ def load_history(username, subject):
     c.execute("SELECT role, content FROM chat_history WHERE username=? AND subject=? ORDER BY timestamp ASC", (username, subject))
     return c.fetchall()
 
-# [추가] 메시지 삭제 함수 (DB + Session 동기화)
 def delete_message(index, username, subject, content):
     # 1. DB에서 삭제
     c = conn.cursor()
-    # 안전을 위해 내용, 작성자, 과목이 일치하는 가장 최근 항목 1개를 삭제
     try:
         c.execute("""
             DELETE FROM chat_history 
@@ -145,12 +144,21 @@ def delete_message(index, username, subject, content):
     
     st.rerun()
 
-# --- 3. PDF 출력 기능 (한글 지원) ---
+# --- 3. Lottie 애니메이션 로드 함수 ---
+def load_lottieurl(url: str):
+    try:
+        r = requests.get(url)
+        if r.status_code != 200:
+            return None
+        return r.json()
+    except:
+        return None
+
+# --- 4. PDF 출력 기능 (한글 지원) ---
 def export_to_pdf(chat_history, username):
     pdf = FPDF()
     pdf.add_page()
     
-    # 폰트 경로 설정 (같은 폴더에 NanumGothic.ttf 필수)
     font_name = 'NanumGothic.ttf'
     font_path = os.path.join(os.getcwd(), font_name)
     
@@ -163,7 +171,6 @@ def export_to_pdf(chat_history, username):
     except Exception as e:
         return None
 
-    # 헤더
     pdf.set_font_size(16)
     pdf.cell(0, 10, f"KMLE AI Tutor - Study Note", 0, 1, 'C')
     pdf.set_font_size(10)
@@ -172,47 +179,52 @@ def export_to_pdf(chat_history, username):
     pdf.line(10, 30, 200, 30)
     pdf.ln(10)
     
-    # 본문
     for role, text in chat_history:
         role_str = "Tutor (AI)" if role == "assistant" else "Me"
-        
-        # 화자 표시
-        pdf.set_text_color(100, 75, 150) # 보라색 계열
+        pdf.set_text_color(100, 75, 150)
         pdf.set_font_size(11)
         pdf.cell(0, 8, f"[{role_str}]", 0, 1)
         
-        # 내용 표시
-        pdf.set_text_color(0, 0, 0) # 검정
+        pdf.set_text_color(0, 0, 0)
         pdf.set_font_size(10)
         
-        # HTML 태그 및 마크다운 제거
         clean_text = re.sub('<[^<]+?>', '', text) 
         clean_text = clean_text.replace("**", "").replace("__", "")
         
         pdf.multi_cell(0, 6, clean_text)
         pdf.ln(4)
         
-    # [핵심 수정] bytearray를 bytes로 변환하여 반환
     return bytes(pdf.output(dest='S'))
 
-# --- 4. 로그인 페이지 ---
+# --- 5. 로그인 페이지 (애니메이션 적용됨) ---
 def login_page():
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
+    st.markdown("<br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1.5, 1])
     
     with col2:
         st.markdown("<div class='auth-container'>", unsafe_allow_html=True)
-        st.title("🩺 KMLE AI Tutor")
-        st.subheader("Login (v8.1)")
+        
+        # [애니메이션]
+        lottie_doctor = load_lottieurl("https://lottie.host/5aee9535-6552-474c-9b0d-b03a35d97274/9Xk9r5F1iQ.json")
+        if lottie_doctor:
+            st_lottie(lottie_doctor, height=200, key="doctor_ani")
+        else:
+            st.image("https://cdn-icons-png.flaticon.com/512/3774/3774299.png", width=100)
+
+        st.markdown("<h1 style='color: #6A1B9A; margin-bottom: 0;'>KMLE AI Tutor</h1>", unsafe_allow_html=True)
+        st.caption("의사 국가고시 합격을 위한 나만의 튜터 🌸")
+        st.markdown("---")
         
         menu = ["로그인", "회원가입"]
-        choice = st.selectbox("메뉴", menu)
+        choice = st.selectbox("메뉴 선택", menu)
         
-        username = st.text_input("아이디")
-        password = st.text_input("비밀번호", type='password')
+        username = st.text_input("아이디 (User ID)")
+        password = st.text_input("비밀번호 (Password)", type='password')
+        
+        st.markdown("<br>", unsafe_allow_html=True)
         
         if choice == "회원가입":
-            if st.button("가입하기"):
+            if st.button("✨ 가입하기", use_container_width=True):
                 c = conn.cursor()
                 c.execute("SELECT * FROM users WHERE username = ?", (username,))
                 if c.fetchone():
@@ -221,10 +233,10 @@ def login_page():
                     c.execute("INSERT INTO users (username, password) VALUES (?, ?)", 
                               (username, make_hashes(password)))
                     conn.commit()
-                    st.success("가입 성공! 로그인 탭으로 이동하세요.")
+                    st.success("가입 성공! 로그인해주세요.")
                     
         elif choice == "로그인":
-            if st.button("접속하기"):
+            if st.button("🚀 접속하기", use_container_width=True):
                 c = conn.cursor()
                 c.execute("SELECT * FROM users WHERE username = ? AND password = ?", 
                           (username, make_hashes(password)))
@@ -236,17 +248,14 @@ def login_page():
                     st.error("아이디 또는 비밀번호가 틀렸습니다.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-# --- 5. 메인 앱 (채팅) ---
+# --- 6. 메인 앱 (채팅) ---
 def main_app():
-    # 1. 초기화 (가장 먼저!)
     if "messages" not in st.session_state:
         st.session_state.messages = []
     
-    # 2. 사이드바 설정 (수정됨)
     with st.sidebar:
         st.title(f"👨‍⚕️ Dr. {st.session_state.username}")
         
-        # [복구] Gemini 연결 상태 표시
         st.markdown(f"""
         <div style='background-color: #EDE7F6; padding: 10px; border-radius: 10px; border: 1px solid #D1C4E9; margin-bottom: 10px;'>
             <small>🧠 Main Brain</small><br>
@@ -261,7 +270,6 @@ def main_app():
             
         st.markdown("---")
         
-        # [KMLE 표준 17과목 목차]
         subjects = {
             "01. 순환기 (Cardiology)": "💖",
             "02. 호흡기 (Pulmonology)": "🌬️",
@@ -289,13 +297,9 @@ def main_app():
         uploaded_file = st.file_uploader("📸 자료/사진 업로드", type=["jpg", "png", "jpeg"])
         st.markdown("---")
         
-        # [수정] 선택적 PDF 다운로드 로직
-        # session_state에 저장된 체크박스 값들을 확인하여 필터링
         if st.session_state.messages:
             selected_msgs = []
             for i, msg in enumerate(st.session_state.messages):
-                # 키 이름: f"chk_{i}" (아래 채팅 렌더링 부분 참고)
-                # 기본값은 True(체크됨)로 가정
                 if st.session_state.get(f"chk_{i}", True): 
                     selected_msgs.append((msg['role'], msg['content']))
             
@@ -311,15 +315,13 @@ def main_app():
             else:
                 st.caption("PDF로 저장할 대화를 선택해주세요.")
 
-    # 3. 메인 헤더
+    # [날짜 업데이트]
     st.title(f"{current_icon} {selected_subject}")
-    st.caption(f"🚀 Powered by Gemini 3 Pro | 📅 2026-02-04 Ver.")
+    st.caption(f"🚀 Powered by Gemini 3 Pro | 📅 2026-02-05 Ver.")
 
-    # 4. 과목 변경 및 DB 로드 로직
     if "current_subject" not in st.session_state:
         st.session_state.current_subject = selected_subject
 
-    # 과목 변경 시
     if st.session_state.current_subject != selected_subject:
         st.session_state.current_subject = selected_subject
         st.session_state.messages = [] 
@@ -327,51 +329,37 @@ def main_app():
         for role, content in history:
             st.session_state.messages.append({"role": role, "content": content})
             
-    # 첫 로드 시
     if not st.session_state.messages:
         history = load_history(st.session_state.username, selected_subject)
         if history:
              for role, content in history:
                 st.session_state.messages.append({"role": role, "content": content})
 
-    # 5. 채팅 메시지 렌더링 (수정됨: 삭제 버튼 및 선택 체크박스 추가)
-    # enumerate를 사용하여 인덱스(i)를 추적
     for i, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
-            # 이미지 표시
             if "image" in message:
                 st.image(message["image"], width=300)
             
-            # 텍스트 표시
             st.markdown(message["content"], unsafe_allow_html=True)
             
-            # [기능 추가] 메시지 하단 컨트롤 패널 (User 메시지는 삭제만, AI는 PDF선택까지)
-            # 깔끔하게 보이기 위해 expander나 작은 컬럼 사용
             col_pdf, col_del, col_space = st.columns([0.2, 0.2, 0.6])
             
             with col_pdf:
-                # PDF 포함 여부 체크박스 (기본값 True)
-                # key를 유니크하게 설정해야 함 (chk_인덱스)
                 st.checkbox("PDF 저장", value=True, key=f"chk_{i}", label_visibility="collapsed")
                 
             with col_del:
-                # 삭제 버튼 (누르면 즉시 DB 및 화면에서 삭제)
                 if st.button("🗑️", key=f"del_{i}", help="이 대화 삭제"):
                     delete_message(i, st.session_state.username, selected_subject, message["content"])
-    # 6. 사용자 입력 처리
+    
     prompt = st.chat_input("질문하세요! (ex: 50세 여자가 갑자기 배가 아파서...)")
 
     if prompt:
-        # 이미지 처리
         image_obj = None
         if uploaded_file:
             image_obj = Image.open(uploaded_file)
-            # 이미지가 있으면 채팅창에 미리 보여주기
             with st.chat_message("user"):
                 st.image(image_obj, width=300)
         
-        # User 메시지 표시 및 저장
-        # (DB에는 이미지를 저장하지 않음 - 용량 문제)
         save_message(st.session_state.username, selected_subject, "user", prompt)
         
         user_msg = {"role": "user", "content": prompt}
@@ -381,7 +369,6 @@ def main_app():
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # AI 응답
         with st.chat_message("assistant"):
             placeholder = st.empty()
             placeholder.markdown("💫 *Gemini 3 Pro가 분석 중...*")
@@ -389,6 +376,7 @@ def main_app():
             system_instruction = f"""
             당신은 'KMLE AI Tutor'입니다. 
             현재 과목: {selected_subject}
+            현재 날짜: 2026-02-05
             
             [Role]
             친절하지만 핵심을 찌르는 족보 과외 선생님 (파스텔톤 어조 "~해요")
@@ -405,7 +393,6 @@ def main_app():
             중요한 해부학 구조, 병변 사진이 필요하면 반드시 문장 끝에 [이미지 검색: 검색어] 태그를 붙이세요.
             """
 
-            # 모델 입력 구성
             inputs = [system_instruction, prompt]
             if image_obj:
                 inputs.append(image_obj)
@@ -417,7 +404,6 @@ def main_app():
                 )
                 full_text = response.text
                 
-                # 이미지 검색 태그 변환
                 def link_replacer(match):
                     keyword = match.group(1)
                     url = f"https://www.google.com/search?tbm=isch&q={keyword.replace(' ', '+')}"
