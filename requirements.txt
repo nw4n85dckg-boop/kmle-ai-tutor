@@ -3,3 +3,5 @@ google-genai
 python-dotenv
 fpdf2
 Pillow
+streamlit-lottie
+requests
